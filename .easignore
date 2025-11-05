@@ -1,0 +1,9 @@
+node_modules/**/*
+.expo/**/*
+.expo-shared/**/*
+*.log
+.git/**/*
+.vscode/**/*
+*.md
+.env.local
+.env.*.local
