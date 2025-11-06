@@ -10,7 +10,7 @@ import { WebView } from 'react-native-webview';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import SplashScreenComponent from './components/SplashScreen';
 
-const WEBSITE_URL = 'https://daant-zydm.vercel.app/';
+const WEBSITE_URL = 'https://skin-alyze.vercel.app/';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
