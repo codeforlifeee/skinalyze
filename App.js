@@ -4,20 +4,31 @@ import {
   View, 
   ActivityIndicator, 
   Platform,
-  StatusBar 
+  StatusBar,
+  Text,
+  TouchableOpacity
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import SplashScreenComponent from './components/SplashScreen';
 
-const WEBSITE_URL = 'https://skin-alyze.vercel.app/';
+// Load login page directly to avoid redirect issues
+const WEBSITE_URL = 'https://skin-alyze.vercel.app/login';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [error, setError] = useState(null);
+  const [key, setKey] = useState(0);
 
   const handleSplashComplete = () => {
     setShowSplash(false);
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    setLoading(true);
+    setKey(prevKey => prevKey + 1);
   };
 
   // Show splash screen first
@@ -62,44 +73,87 @@ export default function App() {
       />
       
       <WebView
+        key={key}
         source={{ uri: WEBSITE_URL }}
         style={styles.webview}
-        onLoadStart={() => setLoading(true)}
+        onLoadStart={() => {
+          setLoading(true);
+          setError(null);
+        }}
         onLoadEnd={() => setLoading(false)}
+        onError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.error('WebView error:', nativeEvent);
+          setError('Failed to load website');
+          setLoading(false);
+        }}
+        onHttpError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.error('HTTP error:', nativeEvent);
+          if (nativeEvent.statusCode >= 400) {
+            setError(`Server error: ${nativeEvent.statusCode}`);
+            setLoading(false);
+          }
+        }}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        startInLoadingState={true}
+        startInLoadingState={false}
         scalesPageToFit={true}
         bounces={false}
-        // Allow mixed content for both HTTP and HTTPS
-        mixedContentMode="always"
-        // Enable caching for better performance
-        cacheEnabled={true}
-        // Allow file access
+        mixedContentMode="compatibility"
+        cacheEnabled={false}
+        cacheMode="LOAD_NO_CACHE"
         allowFileAccess={true}
-        // Media playback settings
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback={true}
-        // User agent (optional - makes it appear as mobile browser)
-        userAgent="Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36"
-        // ⭐ CRITICAL FIX: Prevent opening in external browser
+        thirdPartyCookiesEnabled={true}
+        sharedCookiesEnabled={true}
+        // Allow all navigation within the app
         onShouldStartLoadWithRequest={(request) => {
-          // Return true to allow all navigation within the WebView
-          // This prevents external browser from opening
+          // Allow all requests from the same domain
+          const url = request.url.toLowerCase();
+          if (url.includes('skin-alyze.vercel.app')) {
+            return true;
+          }
+          // Allow common auth redirects
           return true;
         }}
-        // Prevent new windows/tabs from opening externally
+        onNavigationStateChange={(navState) => {
+          // Log navigation for debugging
+          console.log('Navigation:', navState.url);
+        }}
         setSupportMultipleWindows={false}
-        // Handle any window.open() calls to keep them in the app
         onOpenWindow={(syntheticEvent) => {
           const { nativeEvent } = syntheticEvent;
-          // This prevents window.open from opening external browser
         }}
+        // Add timeout handling
+        onContentProcessDidTerminate={() => {
+          setError('Content process crashed');
+          handleRetry();
+        }}
+        // Inject JavaScript to help with debugging
+        injectedJavaScript={`
+          console.log('WebView loaded successfully');
+          window.ReactNativeWebView = true;
+          true;
+        `}
       />
       
-      {loading && (
+      {loading && !error && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#0000ff" />
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>Loading Skinalyze...</Text>
+        </View>
+      )}
+
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorEmoji}>⚠️</Text>
+          <Text style={styles.errorTitle}>Connection Error</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       )}
     </SafeAreaView>
@@ -124,5 +178,48 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 20,
+  },
+  errorEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
