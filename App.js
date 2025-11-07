@@ -20,6 +20,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [error, setError] = useState(null);
   const [key, setKey] = useState(0);
+  const [loadTimeout, setLoadTimeout] = useState(null);
 
   const handleSplashComplete = () => {
     setShowSplash(false);
@@ -30,6 +31,22 @@ export default function App() {
     setLoading(true);
     setKey(prevKey => prevKey + 1);
   };
+
+  // Force hide loader after maximum wait time
+  React.useEffect(() => {
+    if (loading && !showSplash) {
+      const timeout = setTimeout(() => {
+        console.log('Force hiding loader after timeout');
+        setLoading(false);
+      }, 15000); // 15 seconds max wait
+      
+      setLoadTimeout(timeout);
+      
+      return () => {
+        if (timeout) clearTimeout(timeout);
+      };
+    }
+  }, [loading, showSplash]);
 
   // Show splash screen first
   if (showSplash) {
@@ -80,12 +97,25 @@ export default function App() {
           setLoading(true);
           setError(null);
         }}
-        onLoadEnd={() => setLoading(false)}
+        onLoadEnd={() => {
+          console.log('WebView onLoadEnd triggered');
+          setLoading(false);
+          if (loadTimeout) clearTimeout(loadTimeout);
+        }}
+        onLoadProgress={({ nativeEvent }) => {
+          console.log('Loading progress:', nativeEvent.progress);
+          // Hide loader when page is 80% loaded for better UX
+          if (nativeEvent.progress > 0.8 && loading) {
+            setLoading(false);
+            if (loadTimeout) clearTimeout(loadTimeout);
+          }
+        }}
         onError={(syntheticEvent) => {
           const { nativeEvent } = syntheticEvent;
           console.error('WebView error:', nativeEvent);
           setError('Failed to load website');
           setLoading(false);
+          if (loadTimeout) clearTimeout(loadTimeout);
         }}
         onHttpError={(syntheticEvent) => {
           const { nativeEvent } = syntheticEvent;
@@ -93,6 +123,7 @@ export default function App() {
           if (nativeEvent.statusCode >= 400) {
             setError(`Server error: ${nativeEvent.statusCode}`);
             setLoading(false);
+            if (loadTimeout) clearTimeout(loadTimeout);
           }
         }}
         javaScriptEnabled={true}
@@ -101,8 +132,8 @@ export default function App() {
         scalesPageToFit={true}
         bounces={false}
         mixedContentMode="compatibility"
-        cacheEnabled={false}
-        cacheMode="LOAD_NO_CACHE"
+        cacheEnabled={true}
+        cacheMode="LOAD_DEFAULT"
         allowFileAccess={true}
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback={true}
@@ -129,14 +160,41 @@ export default function App() {
         // Add timeout handling
         onContentProcessDidTerminate={() => {
           setError('Content process crashed');
+          if (loadTimeout) clearTimeout(loadTimeout);
           handleRetry();
         }}
-        // Inject JavaScript to help with debugging
+        // Inject JavaScript to help with performance and debugging
         injectedJavaScript={`
-          console.log('WebView loaded successfully');
-          window.ReactNativeWebView = true;
+          (function() {
+            console.log('WebView loaded successfully');
+            window.ReactNativeWebView = true;
+            
+            // Signal React Native when page is truly interactive
+            if (document.readyState === 'complete') {
+              window.ReactNativeWebView.postMessage('PAGE_LOADED');
+            } else {
+              window.addEventListener('load', function() {
+                setTimeout(function() {
+                  window.ReactNativeWebView.postMessage('PAGE_LOADED');
+                }, 1000);
+              });
+            }
+            
+            // Optimize images for mobile
+            const images = document.querySelectorAll('img');
+            images.forEach(img => {
+              img.loading = 'lazy';
+            });
+          })();
           true;
         `}
+        onMessage={(event) => {
+          if (event.nativeEvent.data === 'PAGE_LOADED') {
+            console.log('Page fully loaded from JavaScript');
+            setLoading(false);
+            if (loadTimeout) clearTimeout(loadTimeout);
+          }
+        }}
       />
       
       {loading && !error && (
